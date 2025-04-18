@@ -8,7 +8,7 @@
 <div class="row mb-3">
     <div class="col">
         <label class="form-label">Origin</label>
-        <select class="form-select" @bind="selectedOrigin" @bind:event="onchange">
+        <select class="form-select" @bind="SelectedOrigin">
             <option value="">--Select Origin--</option>
             @foreach (var origin in Origins)
             {
@@ -18,7 +18,7 @@
     </div>
     <div class="col">
         <label class="form-label">Destination</label>
-        <select class="form-select" @bind="selectedDestination" @bind:event="onchange">
+        <select class="form-select" @bind="SelectedDestination">
             <option value="">--Select Destination--</option>
             @foreach (var dest in Destinations)
             {
@@ -94,8 +94,49 @@ else if (Results != null)
     private List<string> Origins = new();
     private List<string> Destinations = new();
     private List<string> Companies = new();
-    private string selectedOrigin = string.Empty;
-    private string selectedDestination = string.Empty;
+    private string _selectedOrigin = string.Empty;
+    private string _selectedDestination = string.Empty;
+    // trigger search automatically when both origin and destination are selected
+    private string SelectedOrigin
+    {
+        get => _selectedOrigin;
+        set
+        {
+            if (_selectedOrigin != value)
+            {
+                _selectedOrigin = value;
+                if (IsRouteSelected)
+                {
+                    _ = ComputeResultsAsync();
+                }
+                else
+                {
+                    Results = null;
+                    Companies.Clear();
+                }
+            }
+        }
+    }
+    private string SelectedDestination
+    {
+        get => _selectedDestination;
+        set
+        {
+            if (_selectedDestination != value)
+            {
+                _selectedDestination = value;
+                if (IsRouteSelected)
+                {
+                    _ = ComputeResultsAsync();
+                }
+                else
+                {
+                    Results = null;
+                    Companies.Clear();
+                }
+            }
+        }
+    }
     private string selectedCompany = string.Empty;
     private string selectedSort = "Price";
     private List<LegOption>? Results;
@@ -107,7 +148,7 @@ else if (Results != null)
     }
 
     private bool IsRouteSelected =>
-        !string.IsNullOrEmpty(selectedOrigin) && !string.IsNullOrEmpty(selectedDestination);
+        !string.IsNullOrEmpty(SelectedOrigin) && !string.IsNullOrEmpty(SelectedDestination);
 
     // Trigger search automatically when origin or destination changes
     private async Task OnRouteChanged(ChangeEventArgs args)
@@ -127,7 +168,7 @@ else if (Results != null)
     {
         var legs = await DbContext.Legs.Include(l => l.Providers).ToListAsync();
         // find all simple paths of planet names
-        var paths = FindPaths(selectedOrigin, selectedDestination, legs);
+        var paths = FindPaths(SelectedOrigin, SelectedDestination, legs);
         var options = new List<LegOption>();
         foreach (var path in paths)
         {
