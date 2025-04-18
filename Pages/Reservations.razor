@@ -1,4 +1,5 @@
 @page "/reservations"
+@using System.ComponentModel.DataAnnotations
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Forms
 @inject AppDbContext DbContext
@@ -11,8 +12,7 @@
 
     private Provider? SelectedProvider;
     private List<Reservation> ReservationsList = new();
-    private string firstName = string.Empty;
-    private string lastName = string.Empty;
+    private ReservationModel model = new();
     private bool isSaving = false;
     private string? message;
 
@@ -41,8 +41,8 @@
         var reservation = new Reservation
         {
             Id = Guid.NewGuid(),
-            FirstName = firstName,
-            LastName = lastName,
+            FirstName = model.FirstName,
+            LastName = model.LastName,
             Routes = $"{SelectedProvider.Leg!.From} -> {SelectedProvider.Leg.To}",
             TotalPrice = SelectedProvider.Price,
             TotalTravelTime = SelectedProvider.FlightEnd - SelectedProvider.FlightStart,
@@ -55,6 +55,14 @@
         await Task.Delay(1000);
         Navigation.NavigateTo("/reservations");
     }
+
+    private class ReservationModel
+    {
+        [Required]
+        public string FirstName { get; set; } = string.Empty;
+        [Required]
+        public string LastName { get; set; } = string.Empty;
+    }
 }
 
 @if (SelectedProvider != null)
@@ -64,19 +72,20 @@
     <p><strong>Price:</strong> @SelectedProvider.Price.ToString("C")</p>
     <p><strong>Travel Time:</strong> @(SelectedProvider.FlightEnd - SelectedProvider.FlightStart)</p>
 
-    <EditForm OnValidSubmit="SubmitAsync">
+    <EditForm Model="model" OnValidSubmit="SubmitAsync">
         <DataAnnotationsValidator />
+        <ValidationSummary />
         <div class="mb-3">
             <label class="form-label">First Name</label>
-            <InputText class="form-control" @bind-Value="firstName" />
+            <InputText class="form-control" @bind-Value="model.FirstName" />
         </div>
         <div class="mb-3">
             <label class="form-label">Last Name</label>
-            <InputText class="form-control" @bind-Value="lastName" />
+            <InputText class="form-control" @bind-Value="model.LastName" />
         </div>
         <button class="btn btn-primary" type="submit" disabled="@isSaving">Confirm Reservation</button>
     </EditForm>
-    @if (message != null)
+    @if (!string.IsNullOrEmpty(message))
     {
         <div class="alert alert-success mt-2">@message</div>
     }

@@ -2,10 +2,14 @@ using Microsoft.EntityFrameworkCore;
 using TravelReservations.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+// Read DetailedErrors setting from configuration (appsettings.json / appsettings.Development.json)
+var detailedErrors = builder.Configuration.GetValue<bool>("DetailedErrors");
 
 // Add services to the container.
 builder.Services.AddRazorPages();
-builder.Services.AddServerSideBlazor();
+// Configure server-side Blazor with detailed errors if enabled
+builder.Services.AddServerSideBlazor()
+    .AddCircuitOptions(options => options.DetailedErrors = detailedErrors);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("TravelDb"));
 
@@ -36,6 +40,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+// Map Blazor hub
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
