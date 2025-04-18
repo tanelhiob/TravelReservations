@@ -12,6 +12,8 @@ builder.Services.AddServerSideBlazor()
     .AddCircuitOptions(options => options.DetailedErrors = detailedErrors);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("TravelDb"));
+// Register our route search service
+builder.Services.AddScoped<RouteSearchService>();
 
 // HttpClient for TravelPrices API
 builder.Services.AddHttpClient("TravelApi", client =>

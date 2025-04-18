@@ -1,145 +1,108 @@
 @page "/"
 @page "/search"
 @using Microsoft.EntityFrameworkCore
+@using TravelReservations.Data
 @inject AppDbContext DbContext
+@inject RouteSearchService SearchService
 
 <h3>Search Travel Deals</h3>
 
 <div class="row mb-3">
     <div class="col">
         <label class="form-label">Origin</label>
-        <select class="form-select" @bind="SelectedOrigin">
+        <select class="form-select" value="@selectedOrigin" @onchange="OnOriginChanged">
             <option value="">--Select Origin--</option>
-            @foreach (var origin in Origins)
+            @foreach (var o in Origins)
             {
-                <option value="@origin">@origin</option>
+                <option value="@o">@o</option>
             }
         </select>
     </div>
     <div class="col">
         <label class="form-label">Destination</label>
-        <select class="form-select" @bind="SelectedDestination">
+        <select class="form-select" value="@selectedDestination" @onchange="OnDestinationChanged">
             <option value="">--Select Destination--</option>
-            @foreach (var dest in Destinations)
+            @foreach (var d in Destinations)
             {
-                <option value="@dest">@dest</option>
+                <option value="@d">@d</option>
             }
         </select>
     </div>
 </div>
 
-@if (IsRouteSelected)
+@if (routes != null)
 {
     <div class="row mb-3">
         <div class="col">
             <label class="form-label">Filter by Company</label>
-            <select class="form-select" @bind="selectedCompany">
+            <select class="form-select" value="@selectedCompany" @onchange="OnCompanyChanged">
                 <option value="">--All Companies--</option>
-                @foreach (var comp in Companies)
+                @foreach (var c in Companies)
                 {
-                    <option value="@comp">@comp</option>
+                    <option value="@c">@c</option>
                 }
             </select>
         </div>
         <div class="col">
             <label class="form-label">Sort by</label>
-            <select class="form-select" @bind="selectedSort">
+            <select class="form-select" value="@selectedSort" @onchange="OnSortChanged">
                 <option value="Price">Price</option>
                 <option value="Distance">Distance</option>
                 <option value="TravelTime">Travel Time</option>
             </select>
         </div>
         <div class="col align-self-end">
-            <button class="btn btn-primary" @onclick="ComputeResultsAsync">Search</button>
+            <button class="btn btn-primary" @onclick="ApplyFilterAndSort">Search</button>
         </div>
     </div>
-}
 
-@if (Results != null && Results.Any())
-{
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                <th>Route</th>
-                <th>Companies</th>
-                <th>Price</th>
-                <th>Distance</th>
-                <th>Travel Time</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var item in Results)
-            {
+    @if (!FilteredRoutes.Any())
+    {
+        <p>No routes found.</p>
+    }
+    else
+    {
+        <table class="table table-striped">
+            <thead>
                 <tr>
-                    <td>@item.RouteDescription</td>
-                    <td>@item.CompanyNames</td>
-                    <td>@item.TotalPrice.ToString("C")</td>
-                    <td>@item.TotalDistance</td>
-                    <td>@item.TotalTravelTime</td>
-                    <td>
-                        <NavLink class="btn btn-success btn-sm" href="@($"reservations?providerIds={string.Join(',', item.ProviderIds)}")">Reserve</NavLink>
-                    </td>
+                    <th>Route</th>
+                    <th>Companies</th>
+                    <th>Price</th>
+                    <th>Distance</th>
+                    <th>Travel Time</th>
+                    <th></th>
                 </tr>
-            }
-        </tbody>
-    </table>
-}
-else if (Results != null)
-{
-    <p>No routes found.</p>
+            </thead>
+            <tbody>
+                @foreach (var item in FilteredRoutes)
+                {
+                    <tr>
+                        <td>@item.RouteDescription</td>
+                        <td>@item.CompanyNames</td>
+                        <td>@item.TotalPrice.ToString("C")</td>
+                        <td>@item.TotalDistance</td>
+                        <td>@item.TotalTravelTime</td>
+                        <td>
+                            <NavLink class="btn btn-success btn-sm" href="@($"reservations?providerIds={string.Join(',', item.ProviderIds)}")">Reserve</NavLink>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
 }
 
 @code {
     private List<string> Origins = new();
     private List<string> Destinations = new();
     private List<string> Companies = new();
-    private string _selectedOrigin = string.Empty;
-    private string _selectedDestination = string.Empty;
-    // trigger search automatically when both origin and destination are selected
-    private string SelectedOrigin
-    {
-        get => _selectedOrigin;
-        set
-        {
-            if (_selectedOrigin != value)
-            {
-                _selectedOrigin = value;
-                if (IsRouteSelected)
-                {
-                    _ = ComputeResultsAsync();
-                }
-                else
-                {
-                    Results = null;
-                    Companies.Clear();
-                }
-            }
-        }
-    }
-    private string SelectedDestination
-    {
-        get => _selectedDestination;
-        set
-        {
-            if (_selectedDestination != value)
-            {
-                _selectedDestination = value;
-                if (IsRouteSelected)
-                {
-                    _ = ComputeResultsAsync();
-                }
-                else
-                {
-                    Results = null;
-                    Companies.Clear();
-                }
-            }
-        }
-    }
+    private string selectedOrigin = string.Empty;
+    private string selectedDestination = string.Empty;
     private string selectedCompany = string.Empty;
     private string selectedSort = "Price";
-    private List<LegOption>? Results;
+
+    private List<LegOption>? routes;
+    private List<LegOption> FilteredRoutes = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -147,114 +110,62 @@ else if (Results != null)
         Destinations = await DbContext.Legs.Select(l => l.To).Distinct().OrderBy(x => x).ToListAsync();
     }
 
-    private bool IsRouteSelected =>
-        !string.IsNullOrEmpty(SelectedOrigin) && !string.IsNullOrEmpty(SelectedDestination);
-
-    // Trigger search automatically when origin or destination changes
-    private async Task OnRouteChanged(ChangeEventArgs args)
+    private async Task OnOriginChanged(ChangeEventArgs e)
     {
-        if (!IsRouteSelected)
+        selectedOrigin = e.Value?.ToString() ?? string.Empty;
+        await LoadRoutesIfReadyAsync();
+    }
+    private async Task OnDestinationChanged(ChangeEventArgs e)
+    {
+        selectedDestination = e.Value?.ToString() ?? string.Empty;
+        await LoadRoutesIfReadyAsync();
+    }
+    private async Task LoadRoutesIfReadyAsync()
+    {
+        if (string.IsNullOrEmpty(selectedOrigin) || string.IsNullOrEmpty(selectedDestination))
         {
-            Results = null;
+            routes = null;
             Companies.Clear();
+            FilteredRoutes.Clear();
             StateHasChanged();
             return;
         }
-        await ComputeResultsAsync();
+        routes = await SearchService.FindAllRoutesAsync(selectedOrigin, selectedDestination);
+        Companies = routes.SelectMany(r => r.CompanyNames.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                          .Select(s => s.Trim())
+                          .Distinct()
+                          .OrderBy(c => c)
+                          .ToList();
+        ApplyFilterAndSort();
+    }
+    private Task OnCompanyChanged(ChangeEventArgs e)
+    {
+        selectedCompany = e.Value?.ToString() ?? string.Empty;
+        ApplyFilterAndSort();
+        return Task.CompletedTask;
+    }
+    private Task OnSortChanged(ChangeEventArgs e)
+    {
+        selectedSort = e.Value?.ToString() ?? "Price";
+        ApplyFilterAndSort();
+        return Task.CompletedTask;
     }
 
-    // Compute multi-leg route options
-    private async Task ComputeResultsAsync()
+    private void ApplyFilterAndSort()
     {
-        var legs = await DbContext.Legs.Include(l => l.Providers).ToListAsync();
-        // find all simple paths of planet names
-        var paths = FindPaths(SelectedOrigin, SelectedDestination, legs);
-        var options = new List<LegOption>();
-        foreach (var path in paths)
+        if (routes == null) return;
+        var list = string.IsNullOrEmpty(selectedCompany)
+            ? routes
+            : routes.Where(r => r.CompanyNames.Split(',', StringSplitOptions.None)
+                .Select(c => c.Trim())
+                .Contains(selectedCompany))
+                .ToList();
+
+        FilteredRoutes = selectedSort switch
         {
-            var selectedProviders = new List<Provider>();
-            bool valid = true;
-            for (int i = 0; i < path.Count - 1; i++)
-            {
-                var from = path[i];
-                var to = path[i + 1];
-                var providers = legs
-                    .Where(l => l.From == from && l.To == to)
-                    .SelectMany(l => l.Providers)
-                    .AsEnumerable();
-                if (!string.IsNullOrEmpty(selectedCompany))
-                    providers = providers.Where(p => p.CompanyName == selectedCompany);
-                if (!providers.Any()) { valid = false; break; }
-                var best = providers.OrderBy(p => p.Price).First();
-                selectedProviders.Add(best);
-            }
-            if (!valid) continue;
-            var routeDesc = string.Join(" -> ", path);
-            var companies = string.Join(", ", selectedProviders.Select(p => p.CompanyName).Distinct());
-            var price = selectedProviders.Sum(p => p.Price);
-            var distance = selectedProviders.Sum(p => p.Leg!.Distance);
-            var travelTime = selectedProviders.Aggregate(TimeSpan.Zero,
-                (sum, p) => sum + (p.FlightEnd - p.FlightStart));
-            var providerIds = selectedProviders.Select(p => p.Id).ToList();
-            options.Add(new LegOption
-            {
-                RouteDescription = routeDesc,
-                CompanyNames = companies,
-                TotalPrice = price,
-                TotalDistance = distance,
-                TotalTravelTime = travelTime,
-                ProviderIds = providerIds
-            });
-        }
-        // populate companies filter
-        Companies = options.SelectMany(o => o.CompanyNames.Split(',', StringSplitOptions.RemoveEmptyEntries))
-            .Select(s => s.Trim()).Distinct().OrderBy(c => c).ToList();
-        // sort
-        Results = selectedSort switch
-        {
-            "Price" => options.OrderBy(o => o.TotalPrice).ToList(),
-            "Distance" => options.OrderBy(o => o.TotalDistance).ToList(),
-            "TravelTime" => options.OrderBy(o => o.TotalTravelTime).ToList(),
-            _ => options
+            "Distance" => list.OrderBy(r => r.TotalDistance).ToList(),
+            "TravelTime" => list.OrderBy(r => r.TotalTravelTime).ToList(),
+            _ => list.OrderBy(r => r.TotalPrice).ToList(),
         };
-    }
-
-    // Depth-first search for simple paths
-    private List<List<string>> FindPaths(string origin, string destination, List<Leg> legs)
-    {
-        var result = new List<List<string>>();
-        var visited = new HashSet<string>();
-        var path = new List<string> { origin };
-        void Dfs(string current)
-        {
-            if (current == destination)
-            {
-                result.Add(new List<string>(path));
-                return;
-            }
-            visited.Add(current);
-            foreach (var leg in legs.Where(l => l.From == current))
-            {
-                if (!visited.Contains(leg.To))
-                {
-                    path.Add(leg.To);
-                    Dfs(leg.To);
-                    path.RemoveAt(path.Count - 1);
-                }
-            }
-            visited.Remove(current);
-        }
-        Dfs(origin);
-        return result;
-    }
-
-    private class LegOption
-    {
-        public string RouteDescription { get; set; } = string.Empty;
-        public string CompanyNames { get; set; } = string.Empty;
-        public decimal TotalPrice { get; set; }
-        public long TotalDistance { get; set; }
-        public TimeSpan TotalTravelTime { get; set; }
-        public List<Guid> ProviderIds { get; set; } = new();
     }
 }
