@@ -7,10 +7,11 @@
 
 @code {
     [Parameter]
-    [SupplyParameterFromQuery(Name = "providerId")]
-    public Guid ProviderId { get; set; }
+    [SupplyParameterFromQuery(Name = "providerIds")]
+    public string? ProviderIdsParam { get; set; }
 
-    private Provider? SelectedProvider;
+    private List<Guid> ProviderIds = new();
+    private List<Provider>? SelectedProviders;
     private List<Reservation> ReservationsList = new();
     private ReservationModel model = new();
     private bool isSaving = false;
@@ -18,15 +19,28 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (ProviderId != Guid.Empty)
+        // Parse providerIds from query
+        if (!string.IsNullOrEmpty(ProviderIdsParam))
         {
-            SelectedProvider = await DbContext.Providers
-                .Include(p => p.Leg)
-                .FirstOrDefaultAsync(p => p.Id == ProviderId);
+            ProviderIds = ProviderIdsParam.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty)
+                .ToList();
+            if (ProviderIds.Any())
+            {
+                SelectedProviders = await DbContext.Providers
+                    .Include(p => p.Leg)
+                    .Where(p => ProviderIds.Contains(p.Id))
+                    .ToListAsync();
+            }
+            else
+            {
+                SelectedProviders = null;
+            }
         }
         else
         {
-            SelectedProvider = null;
+            SelectedProviders = null;
         }
         ReservationsList = await DbContext.Reservations
             .OrderByDescending(r => r.CreatedAt)
@@ -35,18 +49,24 @@
 
     private async Task SubmitAsync()
     {
-        if (SelectedProvider == null)
+        if (SelectedProviders == null || !SelectedProviders.Any())
             return;
         isSaving = true;
+        // Aggregate reservation details
+        var routes = string.Join(" | ", SelectedProviders.Select(p => $"{p.Leg!.From} -> {p.Leg.To}"));
+        var companies = string.Join(", ", SelectedProviders.Select(p => p.CompanyName).Distinct());
+        var totalPrice = SelectedProviders.Sum(p => p.Price);
+        var totalTime = SelectedProviders.Aggregate(TimeSpan.Zero,
+            (sum, p) => sum + (p.FlightEnd - p.FlightStart));
         var reservation = new Reservation
         {
             Id = Guid.NewGuid(),
             FirstName = model.FirstName,
             LastName = model.LastName,
-            Routes = $"{SelectedProvider.Leg!.From} -> {SelectedProvider.Leg.To}",
-            TotalPrice = SelectedProvider.Price,
-            TotalTravelTime = SelectedProvider.FlightEnd - SelectedProvider.FlightStart,
-            Companies = SelectedProvider.CompanyName,
+            Routes = routes,
+            TotalPrice = totalPrice,
+            TotalTravelTime = totalTime,
+            Companies = companies,
             CreatedAt = DateTime.UtcNow
         };
         DbContext.Reservations.Add(reservation);
@@ -65,12 +85,25 @@
     }
 }
 
-@if (SelectedProvider != null)
+@if (SelectedProviders != null && SelectedProviders.Any())
 {
-    <h3>Reservation: @SelectedProvider.Leg.From to @SelectedProvider.Leg.To</h3>
-    <p><strong>Company:</strong> @SelectedProvider.CompanyName</p>
-    <p><strong>Price:</strong> @SelectedProvider.Price.ToString("C")</p>
-    <p><strong>Travel Time:</strong> @(SelectedProvider.FlightEnd - SelectedProvider.FlightStart)</p>
+    <h3>Reservation Details</h3>
+    <ul class="list-group mb-3">
+        @foreach (var p in SelectedProviders)
+        {
+            <li class="list-group-item">
+                <strong>@p.Leg!.From -> @p.Leg.To</strong><br />
+                Company: @p.CompanyName<br />
+                Price: @p.Price.ToString("C")<br />
+                Travel Time: @(p.FlightEnd - p.FlightStart)
+            </li>
+        }
+    </ul>
+    <h5>Aggregate</h5>
+    <p><strong>Route:</strong> @string.Join(" | ", SelectedProviders.Select(p => $"{p.Leg!.From}->{p.Leg.To}"))</p>
+    <p><strong>Companies:</strong> @string.Join(", ", SelectedProviders.Select(p => p.CompanyName).Distinct())</p>
+    <p><strong>Total Price:</strong> @SelectedProviders.Sum(p => p.Price).ToString("C")</p>
+    <p><strong>Total Travel Time:</strong> @SelectedProviders.Aggregate(TimeSpan.Zero, (sum, p) => sum + (p.FlightEnd - p.FlightStart))</p>
 
     <EditForm Model="model" OnValidSubmit="SubmitAsync">
         <DataAnnotationsValidator />

@@ -1,3 +1,4 @@
+@page "/"
 @page "/search"
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
@@ -7,7 +8,7 @@
 <div class="row mb-3">
     <div class="col">
         <label class="form-label">Origin</label>
-        <select class="form-select" @bind="selectedOrigin">
+        <select class="form-select" @bind="selectedOrigin" @bind:event="onchange">
             <option value="">--Select Origin--</option>
             @foreach (var origin in Origins)
             {
@@ -17,7 +18,7 @@
     </div>
     <div class="col">
         <label class="form-label">Destination</label>
-        <select class="form-select" @bind="selectedDestination">
+        <select class="form-select" @bind="selectedDestination" @bind:event="onchange">
             <option value="">--Select Destination--</option>
             @foreach (var dest in Destinations)
             {
@@ -49,17 +50,18 @@
             </select>
         </div>
         <div class="col align-self-end">
-            <button class="btn btn-primary" @onclick="SearchAsync">Search</button>
+            <button class="btn btn-primary" @onclick="ComputeResultsAsync">Search</button>
         </div>
     </div>
 }
 
-@if (Results != null)
+@if (Results != null && Results.Any())
 {
     <table class="table table-striped">
         <thead>
             <tr>
-                <th>Company</th>
+                <th>Route</th>
+                <th>Companies</th>
                 <th>Price</th>
                 <th>Distance</th>
                 <th>Travel Time</th>
@@ -70,17 +72,22 @@
             @foreach (var item in Results)
             {
                 <tr>
-                    <td>@item.CompanyName</td>
-                    <td>@item.Price.ToString("C")</td>
-                    <td>@item.Distance</td>
-                    <td>@item.TravelTime</td>
+                    <td>@item.RouteDescription</td>
+                    <td>@item.CompanyNames</td>
+                    <td>@item.TotalPrice.ToString("C")</td>
+                    <td>@item.TotalDistance</td>
+                    <td>@item.TotalTravelTime</td>
                     <td>
-                        <NavLink class="btn btn-success btn-sm" href="@($"reservations?providerId={item.ProviderId}")">Reserve</NavLink>
+                        <NavLink class="btn btn-success btn-sm" href="@($"reservations?providerIds={string.Join(',', item.ProviderIds)}")">Reserve</NavLink>
                     </td>
                 </tr>
             }
         </tbody>
     </table>
+}
+else if (Results != null)
+{
+    <p>No routes found.</p>
 }
 
 @code {
@@ -99,46 +106,114 @@
         Destinations = await DbContext.Legs.Select(l => l.To).Distinct().OrderBy(x => x).ToListAsync();
     }
 
-    private bool IsRouteSelected => !string.IsNullOrEmpty(selectedOrigin) && !string.IsNullOrEmpty(selectedDestination);
+    private bool IsRouteSelected =>
+        !string.IsNullOrEmpty(selectedOrigin) && !string.IsNullOrEmpty(selectedDestination);
 
-    private async Task SearchAsync()
+    // Trigger search automatically when origin or destination changes
+    private async Task OnRouteChanged(ChangeEventArgs args)
     {
-        var query = DbContext.Providers.Include(p => p.Leg)
-            .Where(p => p.Leg.From == selectedOrigin && p.Leg.To == selectedDestination);
-
-        var list = await query.ToListAsync();
-
-        Companies = list.Select(p => p.CompanyName).Distinct().OrderBy(x => x).ToList();
-
-        if (!string.IsNullOrEmpty(selectedCompany))
+        if (!IsRouteSelected)
         {
-            list = list.Where(p => p.CompanyName == selectedCompany).ToList();
+            Results = null;
+            Companies.Clear();
+            StateHasChanged();
+            return;
         }
+        await ComputeResultsAsync();
+    }
 
-        Results = list.Select(p => new LegOption
+    // Compute multi-leg route options
+    private async Task ComputeResultsAsync()
+    {
+        var legs = await DbContext.Legs.Include(l => l.Providers).ToListAsync();
+        // find all simple paths of planet names
+        var paths = FindPaths(selectedOrigin, selectedDestination, legs);
+        var options = new List<LegOption>();
+        foreach (var path in paths)
         {
-            ProviderId = p.Id,
-            CompanyName = p.CompanyName,
-            Price = p.Price,
-            Distance = p.Leg.Distance,
-            TravelTime = p.FlightEnd - p.FlightStart
-        }).ToList();
-
+            var selectedProviders = new List<Provider>();
+            bool valid = true;
+            for (int i = 0; i < path.Count - 1; i++)
+            {
+                var from = path[i];
+                var to = path[i + 1];
+                var providers = legs
+                    .Where(l => l.From == from && l.To == to)
+                    .SelectMany(l => l.Providers)
+                    .AsEnumerable();
+                if (!string.IsNullOrEmpty(selectedCompany))
+                    providers = providers.Where(p => p.CompanyName == selectedCompany);
+                if (!providers.Any()) { valid = false; break; }
+                var best = providers.OrderBy(p => p.Price).First();
+                selectedProviders.Add(best);
+            }
+            if (!valid) continue;
+            var routeDesc = string.Join(" -> ", path);
+            var companies = string.Join(", ", selectedProviders.Select(p => p.CompanyName).Distinct());
+            var price = selectedProviders.Sum(p => p.Price);
+            var distance = selectedProviders.Sum(p => p.Leg!.Distance);
+            var travelTime = selectedProviders.Aggregate(TimeSpan.Zero,
+                (sum, p) => sum + (p.FlightEnd - p.FlightStart));
+            var providerIds = selectedProviders.Select(p => p.Id).ToList();
+            options.Add(new LegOption
+            {
+                RouteDescription = routeDesc,
+                CompanyNames = companies,
+                TotalPrice = price,
+                TotalDistance = distance,
+                TotalTravelTime = travelTime,
+                ProviderIds = providerIds
+            });
+        }
+        // populate companies filter
+        Companies = options.SelectMany(o => o.CompanyNames.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            .Select(s => s.Trim()).Distinct().OrderBy(c => c).ToList();
+        // sort
         Results = selectedSort switch
         {
-            "Price" => Results.OrderBy(r => r.Price).ToList(),
-            "Distance" => Results.OrderBy(r => r.Distance).ToList(),
-            "TravelTime" => Results.OrderBy(r => r.TravelTime).ToList(),
-            _ => Results
+            "Price" => options.OrderBy(o => o.TotalPrice).ToList(),
+            "Distance" => options.OrderBy(o => o.TotalDistance).ToList(),
+            "TravelTime" => options.OrderBy(o => o.TotalTravelTime).ToList(),
+            _ => options
         };
+    }
+
+    // Depth-first search for simple paths
+    private List<List<string>> FindPaths(string origin, string destination, List<Leg> legs)
+    {
+        var result = new List<List<string>>();
+        var visited = new HashSet<string>();
+        var path = new List<string> { origin };
+        void Dfs(string current)
+        {
+            if (current == destination)
+            {
+                result.Add(new List<string>(path));
+                return;
+            }
+            visited.Add(current);
+            foreach (var leg in legs.Where(l => l.From == current))
+            {
+                if (!visited.Contains(leg.To))
+                {
+                    path.Add(leg.To);
+                    Dfs(leg.To);
+                    path.RemoveAt(path.Count - 1);
+                }
+            }
+            visited.Remove(current);
+        }
+        Dfs(origin);
+        return result;
     }
 
     private class LegOption
     {
-        public Guid ProviderId { get; set; }
-        public string CompanyName { get; set; } = string.Empty;
-        public decimal Price { get; set; }
-        public long Distance { get; set; }
-        public TimeSpan TravelTime { get; set; }
+        public string RouteDescription { get; set; } = string.Empty;
+        public string CompanyNames { get; set; } = string.Empty;
+        public decimal TotalPrice { get; set; }
+        public long TotalDistance { get; set; }
+        public TimeSpan TotalTravelTime { get; set; }
+        public List<Guid> ProviderIds { get; set; } = new();
     }
 }
