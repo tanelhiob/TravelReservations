@@ -1,0 +1,119 @@
+@page "/reservations"
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
+@inject AppDbContext DbContext
+@inject NavigationManager Navigation
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "providerId")]
+    public Guid ProviderId { get; set; }
+
+    private Provider? SelectedProvider;
+    private List<Reservation> ReservationsList = new();
+    private string firstName = string.Empty;
+    private string lastName = string.Empty;
+    private bool isSaving = false;
+    private string? message;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ProviderId != Guid.Empty)
+        {
+            SelectedProvider = await DbContext.Providers
+                .Include(p => p.Leg)
+                .FirstOrDefaultAsync(p => p.Id == ProviderId);
+        }
+        else
+        {
+            SelectedProvider = null;
+        }
+        ReservationsList = await DbContext.Reservations
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (SelectedProvider == null)
+            return;
+        isSaving = true;
+        var reservation = new Reservation
+        {
+            Id = Guid.NewGuid(),
+            FirstName = firstName,
+            LastName = lastName,
+            Routes = $"{SelectedProvider.Leg!.From} -> {SelectedProvider.Leg.To}",
+            TotalPrice = SelectedProvider.Price,
+            TotalTravelTime = SelectedProvider.FlightEnd - SelectedProvider.FlightStart,
+            Companies = SelectedProvider.CompanyName,
+            CreatedAt = DateTime.UtcNow
+        };
+        DbContext.Reservations.Add(reservation);
+        await DbContext.SaveChangesAsync();
+        message = "Reservation created successfully!";
+        await Task.Delay(1000);
+        Navigation.NavigateTo("/reservations");
+    }
+}
+
+@if (SelectedProvider != null)
+{
+    <h3>Reservation: @SelectedProvider.Leg.From to @SelectedProvider.Leg.To</h3>
+    <p><strong>Company:</strong> @SelectedProvider.CompanyName</p>
+    <p><strong>Price:</strong> @SelectedProvider.Price.ToString("C")</p>
+    <p><strong>Travel Time:</strong> @(SelectedProvider.FlightEnd - SelectedProvider.FlightStart)</p>
+
+    <EditForm OnValidSubmit="SubmitAsync">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label">First Name</label>
+            <InputText class="form-control" @bind-Value="firstName" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Last Name</label>
+            <InputText class="form-control" @bind-Value="lastName" />
+        </div>
+        <button class="btn btn-primary" type="submit" disabled="@isSaving">Confirm Reservation</button>
+    </EditForm>
+    @if (message != null)
+    {
+        <div class="alert alert-success mt-2">@message</div>
+    }
+}
+else
+{
+    <h3>Existing Reservations</h3>
+    @if (!ReservationsList.Any())
+    {
+        <p>No reservations yet.</p>
+    }
+    else
+    {
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Route</th>
+                    <th>Company</th>
+                    <th>Price</th>
+                    <th>Travel Time</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var res in ReservationsList)
+                {
+                    <tr>
+                        <td>@res.FirstName @res.LastName</td>
+                        <td>@res.Routes</td>
+                        <td>@res.Companies</td>
+                        <td>@res.TotalPrice.ToString("C")</td>
+                        <td>@res.TotalTravelTime</td>
+                        <td>@res.CreatedAt.ToLocalTime().ToString("g")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}

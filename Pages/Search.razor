@@ -1,0 +1,144 @@
+@page "/search"
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+
+<h3>Search Travel Deals</h3>
+
+<div class="row mb-3">
+    <div class="col">
+        <label class="form-label">Origin</label>
+        <select class="form-select" @bind="selectedOrigin">
+            <option value="">--Select Origin--</option>
+            @foreach (var origin in Origins)
+            {
+                <option value="@origin">@origin</option>
+            }
+        </select>
+    </div>
+    <div class="col">
+        <label class="form-label">Destination</label>
+        <select class="form-select" @bind="selectedDestination">
+            <option value="">--Select Destination--</option>
+            @foreach (var dest in Destinations)
+            {
+                <option value="@dest">@dest</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (IsRouteSelected)
+{
+    <div class="row mb-3">
+        <div class="col">
+            <label class="form-label">Filter by Company</label>
+            <select class="form-select" @bind="selectedCompany">
+                <option value="">--All Companies--</option>
+                @foreach (var comp in Companies)
+                {
+                    <option value="@comp">@comp</option>
+                }
+            </select>
+        </div>
+        <div class="col">
+            <label class="form-label">Sort by</label>
+            <select class="form-select" @bind="selectedSort">
+                <option value="Price">Price</option>
+                <option value="Distance">Distance</option>
+                <option value="TravelTime">Travel Time</option>
+            </select>
+        </div>
+        <div class="col align-self-end">
+            <button class="btn btn-primary" @onclick="SearchAsync">Search</button>
+        </div>
+    </div>
+}
+
+@if (Results != null)
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Company</th>
+                <th>Price</th>
+                <th>Distance</th>
+                <th>Travel Time</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Results)
+            {
+                <tr>
+                    <td>@item.CompanyName</td>
+                    <td>@item.Price.ToString("C")</td>
+                    <td>@item.Distance</td>
+                    <td>@item.TravelTime</td>
+                    <td>
+                        <NavLink class="btn btn-success btn-sm" href="@($"reservations?providerId={item.ProviderId}")">Reserve</NavLink>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<string> Origins = new();
+    private List<string> Destinations = new();
+    private List<string> Companies = new();
+    private string selectedOrigin = string.Empty;
+    private string selectedDestination = string.Empty;
+    private string selectedCompany = string.Empty;
+    private string selectedSort = "Price";
+    private List<LegOption>? Results;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Origins = await DbContext.Legs.Select(l => l.From).Distinct().OrderBy(x => x).ToListAsync();
+        Destinations = await DbContext.Legs.Select(l => l.To).Distinct().OrderBy(x => x).ToListAsync();
+    }
+
+    private bool IsRouteSelected => !string.IsNullOrEmpty(selectedOrigin) && !string.IsNullOrEmpty(selectedDestination);
+
+    private async Task SearchAsync()
+    {
+        var query = DbContext.Providers.Include(p => p.Leg)
+            .Where(p => p.Leg.From == selectedOrigin && p.Leg.To == selectedDestination);
+
+        var list = await query.ToListAsync();
+
+        Companies = list.Select(p => p.CompanyName).Distinct().OrderBy(x => x).ToList();
+
+        if (!string.IsNullOrEmpty(selectedCompany))
+        {
+            list = list.Where(p => p.CompanyName == selectedCompany).ToList();
+        }
+
+        Results = list.Select(p => new LegOption
+        {
+            ProviderId = p.Id,
+            CompanyName = p.CompanyName,
+            Price = p.Price,
+            Distance = p.Leg.Distance,
+            TravelTime = p.FlightEnd - p.FlightStart
+        }).ToList();
+
+        Results = selectedSort switch
+        {
+            "Price" => Results.OrderBy(r => r.Price).ToList(),
+            "Distance" => Results.OrderBy(r => r.Distance).ToList(),
+            "TravelTime" => Results.OrderBy(r => r.TravelTime).ToList(),
+            _ => Results
+        };
+    }
+
+    private class LegOption
+    {
+        public Guid ProviderId { get; set; }
+        public string CompanyName { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public long Distance { get; set; }
+        public TimeSpan TravelTime { get; set; }
+    }
+}
