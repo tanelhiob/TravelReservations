@@ -7,6 +7,25 @@
 
 <h3>Search Travel Deals</h3>
 
+@if (currentPriceListInfo != null)
+{
+    <div class="alert @(IsExpiringSoon ? "alert-warning" : "alert-info") mb-3">
+        <small>
+            Pricelist valid until: @currentPriceListInfo.ValidUntil.ToString("yyyy-MM-dd HH:mm") UTC
+            @if (IsExpiringSoon)
+            {
+                <strong> - Expiring soon!</strong>
+            }
+        </small>
+    </div>
+}
+else
+{
+    <div class="alert alert-danger mb-3">
+        <strong>No valid pricelist available.</strong> Travel data may be outdated.
+    </div>
+}
+
 <div class="row mb-3">
     <div class="col">
         <label class="form-label">Origin</label>
@@ -103,11 +122,29 @@
 
     private List<LegOption>? routes;
     private List<LegOption> FilteredRoutes = new();
+    private PriceList? currentPriceListInfo;
+    
+    private bool IsExpiringSoon => currentPriceListInfo != null && 
+                                  currentPriceListInfo.ValidUntil <= DateTime.UtcNow.AddHours(1);
 
     protected override async Task OnInitializedAsync()
     {
-        Origins = await DbContext.Legs.Select(l => l.From).Distinct().OrderBy(x => x).ToListAsync();
-        Destinations = await DbContext.Legs.Select(l => l.To).Distinct().OrderBy(x => x).ToListAsync();
+        currentPriceListInfo = await DataInitializer.GetCurrentPriceListAsync(DbContext);
+        if (currentPriceListInfo != null)
+        {
+            Origins = await DbContext.Legs
+                .Where(l => l.PriceListId == currentPriceListInfo.Id)
+                .Select(l => l.From)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToListAsync();
+            Destinations = await DbContext.Legs
+                .Where(l => l.PriceListId == currentPriceListInfo.Id)
+                .Select(l => l.To)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToListAsync();
+        }
     }
 
     private async Task OnOriginChanged(ChangeEventArgs e)

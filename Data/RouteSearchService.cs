@@ -22,37 +22,79 @@ public class RouteSearchService
     }
 
     /// <summary>
-    /// Finds all simple multi-leg routes from origin to destination.
+    /// Finds all simple multi-leg routes from origin to destination using current valid pricelist.
     /// </summary>
     public async Task<List<LegOption>> FindAllRoutesAsync(string origin, string destination)
     {
-        var legs = await _db.Legs.Include(l => l.Providers).ToListAsync();
+        var currentPriceList = await DataInitializer.GetCurrentPriceListAsync(_db);
+        if (currentPriceList == null)
+        {
+            return new List<LegOption>(); // No valid pricelist available
+        }
+        
+        var legs = await _db.Legs
+            .Include(l => l.Providers)
+            .Where(l => l.PriceListId == currentPriceList.Id)
+            .ToListAsync();
         var paths = FindPaths(origin, destination, legs);
         var options = new List<LegOption>();
         foreach (var path in paths)
         {
-            var selectedProviders = new List<Provider>();
-            bool valid = true;
-            for (int i = 0; i < path.Count - 1; i++)
-            {
-                var from = path[i];
-                var to = path[i + 1];
-                var providers = legs
-                    .Where(l => l.From == from && l.To == to)
-                    .SelectMany(l => l.Providers);
-                if (!providers.Any()) { valid = false; break; }
-                var best = providers.OrderBy(p => p.Price).First();
-                selectedProviders.Add(best);
-            }
-            if (!valid) continue;
+            // Generate multiple combinations of providers for each path
+            var pathOptions = GenerateProviderCombinations(path, legs);
+            options.AddRange(pathOptions);
+        }
+        
+        // Sort by price and return top results
+        return options.OrderBy(o => o.TotalPrice).Take(50).ToList();
+    }
+    
+    private List<LegOption> GenerateProviderCombinations(List<string> path, List<Leg> legs)
+    {
+        var combinations = new List<LegOption>();
+        var legProviders = new List<List<Provider>>();
+        
+        // Get all providers for each leg in the path
+        for (int i = 0; i < path.Count - 1; i++)
+        {
+            var from = path[i];
+            var to = path[i + 1];
+            var providers = legs
+                .Where(l => l.From == from && l.To == to)
+                .SelectMany(l => l.Providers)
+                .ToList();
+            if (!providers.Any())
+                return combinations; // No valid route
+            legProviders.Add(providers);
+        }
+        
+        // Generate combinations (limited to prevent explosion)
+        var maxCombinations = 20;
+        var currentCombinations = 0;
+        
+        GenerateCombinationsRecursive(legProviders, 0, new List<Provider>(), combinations, path, ref currentCombinations, maxCombinations);
+        
+        return combinations;
+    }
+    
+    private void GenerateCombinationsRecursive(List<List<Provider>> legProviders, int legIndex, 
+        List<Provider> currentSelection, List<LegOption> combinations, List<string> path, 
+        ref int currentCombinations, int maxCombinations)
+    {
+        if (currentCombinations >= maxCombinations) return;
+        
+        if (legIndex >= legProviders.Count)
+        {
+            // Complete combination found
             var routeDesc = string.Join(" -> ", path);
-            var companies = string.Join(", ", selectedProviders.Select(p => p.CompanyName).Distinct());
-            var price = selectedProviders.Sum(p => p.Price);
-            var distance = selectedProviders.Sum(p => p.Leg!.Distance);
-            var travelTime = selectedProviders.Aggregate(TimeSpan.Zero,
+            var companies = string.Join(", ", currentSelection.Select(p => p.CompanyName).Distinct());
+            var price = currentSelection.Sum(p => p.Price);
+            var distance = currentSelection.Sum(p => p.Leg!.Distance);
+            var travelTime = currentSelection.Aggregate(TimeSpan.Zero,
                 (sum, p) => sum + (p.FlightEnd - p.FlightStart));
-            var providerIds = selectedProviders.Select(p => p.Id).ToList();
-            options.Add(new LegOption
+            var providerIds = currentSelection.Select(p => p.Id).ToList();
+            
+            combinations.Add(new LegOption
             {
                 RouteDescription = routeDesc,
                 CompanyNames = companies,
@@ -61,8 +103,19 @@ public class RouteSearchService
                 TotalTravelTime = travelTime,
                 ProviderIds = providerIds
             });
+            currentCombinations++;
+            return;
         }
-        return options;
+        
+        // Try each provider for current leg (limit to top 5 by price)
+        var providersForLeg = legProviders[legIndex].OrderBy(p => p.Price).Take(5);
+        foreach (var provider in providersForLeg)
+        {
+            if (currentCombinations >= maxCombinations) break;
+            currentSelection.Add(provider);
+            GenerateCombinationsRecursive(legProviders, legIndex + 1, currentSelection, combinations, path, ref currentCombinations, maxCombinations);
+            currentSelection.RemoveAt(currentSelection.Count - 1);
+        }
     }
 
     // Depth-first search to enumerate simple paths

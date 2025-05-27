@@ -42,7 +42,13 @@
         {
             SelectedProviders = null;
         }
+        // Only show reservations from stored pricelists (last 15)
+        var storedPriceListIds = await DbContext.PriceLists
+            .Select(p => p.Id)
+            .ToListAsync();
+            
         ReservationsList = await DbContext.Reservations
+            .Where(r => storedPriceListIds.Contains(r.PriceListId))
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
     }
@@ -51,6 +57,28 @@
     {
         if (SelectedProviders == null || !SelectedProviders.Any())
             return;
+            
+        // Validate that the pricelist is still valid
+        var currentPriceList = await DataInitializer.GetCurrentPriceListAsync(DbContext);
+        if (currentPriceList == null)
+        {
+            message = "No valid pricelist available. Cannot make reservation.";
+            return;
+        }
+        
+        // Check if all selected providers belong to the current valid pricelist
+        var validProviders = await DbContext.Providers
+            .Include(p => p.Leg)
+            .Where(p => SelectedProviders.Select(sp => sp.Id).Contains(p.Id) && 
+                       p.Leg!.PriceListId == currentPriceList.Id)
+            .ToListAsync();
+            
+        if (validProviders.Count != SelectedProviders.Count)
+        {
+            message = "Pricelist has expired. Please search for new routes.";
+            return;
+        }
+        
         isSaving = true;
         // Aggregate reservation details
         var routes = string.Join(" | ", SelectedProviders.Select(p => $"{p.Leg!.From} -> {p.Leg.To}"));
@@ -67,7 +95,8 @@
             TotalPrice = totalPrice,
             TotalTravelTime = totalTime,
             Companies = companies,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            PriceListId = currentPriceList.Id
         };
         DbContext.Reservations.Add(reservation);
         await DbContext.SaveChangesAsync();
