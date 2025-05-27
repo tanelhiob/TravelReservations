@@ -14,6 +14,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("TravelDb"));
 // Register our route search service
 builder.Services.AddScoped<RouteSearchService>();
+// Register background service for pricelist updates
+builder.Services.AddHostedService<PriceListBackgroundService>();
 
 // HttpClient for TravelPrices API
 builder.Services.AddHttpClient("TravelApi", client =>
