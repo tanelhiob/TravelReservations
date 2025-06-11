@@ -13,44 +13,60 @@ public static class DataInitializer
             return;   // DB has been seeded
         }
 
-        var httpFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-        var client = httpFactory.CreateClient("TravelApi");
-        var response = await client.GetAsync("TravelPrices");
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync();
-
-        var options = new JsonSerializerOptions
+        try
         {
-            PropertyNameCaseInsensitive = true,
-        };
-        var dto = JsonSerializer.Deserialize<TravelPricesDto>(json, options);
-        if (dto?.Legs == null)
-            return;
+            var httpFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+            var client = httpFactory.CreateClient("TravelApi");
+            var response = await client.GetAsync("TravelPrices");
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync();
 
-        foreach (var legDto in dto.Legs)
-        {
-            var leg = new Leg
+            var options = new JsonSerializerOptions
             {
-                Id = legDto.Id,
-                From = legDto.RouteInfo.From.Name,
-                To = legDto.RouteInfo.To.Name,
-                Distance = legDto.RouteInfo.Distance
+                PropertyNameCaseInsensitive = true,
             };
-            foreach (var provDto in legDto.Providers)
-            {
-                leg.Providers.Add(new Provider
-                {
-                    Id = provDto.Id,
-                    CompanyName = provDto.Company.Name,
-                    Price = provDto.Price,
-                    FlightStart = provDto.FlightStart,
-                    FlightEnd = provDto.FlightEnd
-                });
-            }
-            context.Legs.Add(leg);
-        }
+            var dto = JsonSerializer.Deserialize<TravelPricesDto>(json, options);
+            if (dto?.Legs == null)
+                return;
 
-        await context.SaveChangesAsync();
+            foreach (var legDto in dto.Legs)
+            {
+                var leg = new Leg
+                {
+                    Id = legDto.Id,
+                    From = legDto.RouteInfo.From.Name,
+                    To = legDto.RouteInfo.To.Name,
+                    Distance = legDto.RouteInfo.Distance
+                };
+                foreach (var provDto in legDto.Providers)
+                {
+                    leg.Providers.Add(new Provider
+                    {
+                        Id = provDto.Id,
+                        CompanyName = provDto.Company.Name,
+                        Price = provDto.Price,
+                        FlightStart = provDto.FlightStart,
+                        FlightEnd = provDto.FlightEnd
+                    });
+                }
+                context.Legs.Add(leg);
+            }
+
+            await context.SaveChangesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            // Log the error but don't throw - allows app to start with empty data
+            Console.WriteLine($"Failed to initialize data from API: {ex.Message}");
+        }
+        catch (JsonException ex)
+        {
+            Console.WriteLine($"Failed to deserialize API response: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Unexpected error during data initialization: {ex.Message}");
+        }
     }
 
     private record TravelPricesDto(Guid Id, DateTime ValidUntil, List<LegDto> Legs);

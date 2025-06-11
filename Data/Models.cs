@@ -7,7 +7,6 @@ public class Leg
     public string To { get; set; } = string.Empty;
     public long Distance { get; set; }
     public List<Provider> Providers { get; set; } = new List<Provider>();
-    public bool IsSelected { get; set; } = false;
 }
 
 public class Provider
