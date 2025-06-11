@@ -51,14 +51,18 @@
                 <option value="TravelTime">Travel Time</option>
             </select>
         </div>
-        <div class="col align-self-end">
-            <button class="btn btn-primary" @onclick="ApplyFilterAndSort">Search</button>
-        </div>
     </div>
 
     @if (!FilteredRoutes.Any())
     {
-        <p>No routes found.</p>
+        @if (selectedOrigin == selectedDestination && !string.IsNullOrEmpty(selectedOrigin))
+        {
+            <p class="text-warning">Please select different origin and destination locations.</p>
+        }
+        else
+        {
+            <p>No routes found.</p>
+        }
     }
     else
     {
@@ -130,6 +134,16 @@
             StateHasChanged();
             return;
         }
+        
+        if (selectedOrigin == selectedDestination)
+        {
+            routes = new List<LegOption>();
+            Companies.Clear();
+            FilteredRoutes.Clear();
+            StateHasChanged();
+            return;
+        }
+        
         routes = await SearchService.FindAllRoutesAsync(selectedOrigin, selectedDestination);
         Companies = routes.SelectMany(r => r.CompanyNames.Split(',', StringSplitOptions.RemoveEmptyEntries))
                           .Select(s => s.Trim())
@@ -156,7 +170,7 @@
         if (routes == null) return;
         var list = string.IsNullOrEmpty(selectedCompany)
             ? routes
-            : routes.Where(r => r.CompanyNames.Split(',', StringSplitOptions.None)
+            : routes.Where(r => r.CompanyNames.Split(',', StringSplitOptions.RemoveEmptyEntries)
                 .Select(c => c.Trim())
                 .Contains(selectedCompany))
                 .ToList();

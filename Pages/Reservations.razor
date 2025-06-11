@@ -51,29 +51,41 @@
     {
         if (SelectedProviders == null || !SelectedProviders.Any())
             return;
+        
         isSaving = true;
-        // Aggregate reservation details
-        var routes = string.Join(" | ", SelectedProviders.Select(p => $"{p.Leg!.From} -> {p.Leg.To}"));
-        var companies = string.Join(", ", SelectedProviders.Select(p => p.CompanyName).Distinct());
-        var totalPrice = SelectedProviders.Sum(p => p.Price);
-        var totalTime = SelectedProviders.Aggregate(TimeSpan.Zero,
-            (sum, p) => sum + (p.FlightEnd - p.FlightStart));
-        var reservation = new Reservation
+        try
         {
-            Id = Guid.NewGuid(),
-            FirstName = model.FirstName,
-            LastName = model.LastName,
-            Routes = routes,
-            TotalPrice = totalPrice,
-            TotalTravelTime = totalTime,
-            Companies = companies,
-            CreatedAt = DateTime.UtcNow
-        };
-        DbContext.Reservations.Add(reservation);
-        await DbContext.SaveChangesAsync();
-        message = "Reservation created successfully!";
-        await Task.Delay(1000);
-        Navigation.NavigateTo("/reservations");
+            // Aggregate reservation details
+            var routes = string.Join(" | ", SelectedProviders.Select(p => $"{p.Leg!.From} -> {p.Leg.To}"));
+            var companies = string.Join(", ", SelectedProviders.Select(p => p.CompanyName).Distinct());
+            var totalPrice = SelectedProviders.Sum(p => p.Price);
+            var totalTime = SelectedProviders.Aggregate(TimeSpan.Zero,
+                (sum, p) => sum + (p.FlightEnd - p.FlightStart));
+            var reservation = new Reservation
+            {
+                Id = Guid.NewGuid(),
+                FirstName = model.FirstName,
+                LastName = model.LastName,
+                Routes = routes,
+                TotalPrice = totalPrice,
+                TotalTravelTime = totalTime,
+                Companies = companies,
+                CreatedAt = DateTime.UtcNow
+            };
+            DbContext.Reservations.Add(reservation);
+            await DbContext.SaveChangesAsync();
+            message = "Reservation created successfully!";
+            await Task.Delay(1000);
+            Navigation.NavigateTo("/reservations");
+        }
+        catch (Exception ex)
+        {
+            message = $"Error creating reservation: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
     }
 
     private class ReservationModel
@@ -120,12 +132,25 @@
     </EditForm>
     @if (!string.IsNullOrEmpty(message))
     {
-        <div class="alert alert-success mt-2">@message</div>
+        <div class="alert @(message.StartsWith("Error") ? "alert-danger" : "alert-success") mt-2">@message</div>
     }
 }
 else
 {
     <h3>Existing Reservations</h3>
+    @if (string.IsNullOrEmpty(ProviderIdsParam))
+    {
+        <div class="alert alert-info">
+            <p>To make a reservation, please select a route from the <NavLink href="/">search page</NavLink>.</p>
+        </div>
+    }
+    else if (ProviderIds.Any() && (SelectedProviders == null || !SelectedProviders.Any()))
+    {
+        <div class="alert alert-warning">
+            <p>Selected providers not found. Please return to the <NavLink href="/">search page</NavLink> and select a valid route.</p>
+        </div>
+    }
+    
     @if (!ReservationsList.Any())
     {
         <p>No reservations yet.</p>
