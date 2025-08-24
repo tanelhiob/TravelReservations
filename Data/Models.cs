@@ -1,5 +1,13 @@
 namespace TravelReservations.Data;
 
+public class PriceList
+{
+    public Guid Id { get; set; }
+    public DateTime ValidUntil { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public List<Leg> Legs { get; set; } = new List<Leg>();
+}
+
 public class Leg
 {
     public Guid Id { get; set; }
@@ -8,6 +16,8 @@ public class Leg
     public long Distance { get; set; }
     public List<Provider> Providers { get; set; } = new List<Provider>();
     public bool IsSelected { get; set; } = false;
+    public Guid PriceListId { get; set; }
+    public PriceList? PriceList { get; set; }
 }
 
 public class Provider
@@ -31,4 +41,6 @@ public class Reservation
     public TimeSpan TotalTravelTime { get; set; }
     public string Companies { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public Guid PriceListId { get; set; }
+    public PriceList? PriceList { get; set; }
 }

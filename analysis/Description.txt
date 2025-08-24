@@ -1,0 +1,31 @@
+WEB APPLICATION “COSMOS ODYSSEY”
+Solar System Travel Deals
+INTRO
+Create Web App called “Cosmos Odyssey” that shows the best deals for our demanding customers in our solar 
+system. Customers must be able to select travel between the different planets and the system should show possible 
+routes-based prices. After careful consideration customer can choose to make a reservation to their name on a
+specific route.
+THE TASK
+Through our solar system many transportation companies offer different routes and prices to travel at the given time 
+until the pricelist is expired (validUntil). 
+We have developed API to show active routes and prices that are available: 
+https://cosmos-odyssey.azurewebsites.net/api/v1.0/TravelPrices
+The pricelist updates after it is expired and customers should not be able to make a reservation after the pricelist is 
+expired.
+The only possible travel routes between the planets are as follows:
+Before customer can make a reservation, different travel routes must be presented based on the customer selected 
+origin and destination. Customer can prefer to filter the shown selection based on the travel company name and/or 
+sort the result based on the price, distance or travel time. Finally, customer can make a reservation using first and 
+last name as an identification.
+Customers can make a reservation that stores following information:
+First Name,
+Last Name,
+Route(s),
+Total Quoted Price,
+Total Quoted Travel Time,
+Transportation Company Name(s)
+System must store the last 15 pricelists that were active (including all the details that API provided).
+Reservation details must be readable until the pricelist is no longer stored in the system, meaning it is no longer part 
+of the last 15 pricelist. After this, reservation can be forgotten, deleted etc.
+ADDITIONAL INFO
+The solution code must be provided with a short setup guide that explains how to run your code.
